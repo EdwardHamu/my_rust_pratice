@@ -645,6 +645,8 @@ pub fn show_mouse_xy() -> () {
 }
 
 pub fn check_network() -> () {
+    // check_network 功能已禁用
+    /*
     async fn check_one() -> () {
         let res = uitl::ping("www.baidu.com").unwrap();
         let str2 = String::from_utf8_lossy(&res.stdout).clone();
@@ -701,6 +703,7 @@ pub fn check_network() -> () {
         }
     });
     // Ok(format!("********"))
+    */
 }
 
 pub fn play_bingbong() -> () {

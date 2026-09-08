@@ -76,9 +76,9 @@ async fn main() {
         controllers::me::start_notification_socket_listener().await;
     });
 
-    if enums::USER.get().unwrap().as_str() == enums::HW_USER {
-        controllers::me::check_network();
-    }
+    // if enums::USER.get().unwrap().as_str() == enums::HW_USER {
+    //     controllers::me::check_network();
+    // }
 
     let handle2 = tokio::spawn(async {
         loop {

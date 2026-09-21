@@ -9,6 +9,7 @@ use tokio::{self};
 // use std::thread::sleep;
 // use std::time::Duration;
 
+mod cloudflared_port_monitor;
 mod controllers;
 mod enums;
 mod file_monitor;
@@ -110,6 +111,11 @@ async fn main() {
     // 每天早上8点调用 freemodel_usage.py 获取7天已用额度，记录到日志文件
     let _handle7 = tokio::spawn(async {
         file_monitor::start_daily_freemodel_usage_log().await;
+    });
+
+    // 每10秒读取 cloudflared.exe 命令行中的 --url 端口，变化时执行 sync-port.ps1
+    let _handle8 = tokio::spawn(async {
+        cloudflared_port_monitor::start_cloudflared_port_monitor().await;
     });
 
     // let path = enums::get_list_local_list();

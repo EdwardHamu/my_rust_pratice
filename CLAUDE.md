@@ -21,6 +21,14 @@ The role of this file is to describe common mistakes andconfusion points that ag
 
 `src/ui/bingbongbangbong.MP3` is the alarm sound played at 21:30. It gets copied to the output directory by `build.rs`. The binary finds it at runtime via `std::env::current_exe()` sibling path.
 
+## Git watch (`git_watch.rs`)
+
+- Every 4 h fetches a local bare mirror of the intranet repo `SPC.M` and toasts when author `Cloud` pushed new commits. New = "not reachable from any ref tip before the fetch" (`git log <new tip> --not <old tips>`), never date-based; the mirror on disk *is* the baseline, so restarts don't re-notify and the first run only establishes a baseline.
+- Shells out to `git` on PATH via `tokio::process` (needs tokio features `process` + `sync`). Runs with `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never` so a missing credential fails fast instead of popping a Git Credential Manager window; a 15-minute timeout kills a stuck fetch.
+- Mirror lives in `%LOCALAPPDATA%\hello_cargo\git_watch\SPC.M.git`. Optional overrides: `GIT_WATCH_ENABLED/REPO_URL/AUTHOR/USERNAME/PASSWORD/INTERVAL_MINUTES/DIR`. Credentials go to git only through the child's environment (inline credential helper) — never into argv, logs or `/git_watch/status`; run text through `redact()` before printing.
+- Toast body is capped at 255 UTF-16 units and cannot contain newlines (`escape_powershell_single_quoted` flattens them), so the balloon lists at most 3 commits and the console prints the full list. Failure toasts are throttled to one per failure streak plus one recovery toast.
+- Manual trigger: menu `10`, `GET /git_watch/check`; state: `GET /git_watch/status`. Tests build real `git` repos under `%TEMP%`; the fake remote path must not coincide with the mirror path `<dir>/<name>.git`, or the mirror fetches from itself and "succeeds". Details: `docs/git-watch-spc-monitor.md`.
+
 ## MCGS IPC Details (`mcgs_control.rs`)
 
 - Finds MCGS「下载配置」dialog (belongs to `McgsSetPro.exe`, a different process from the

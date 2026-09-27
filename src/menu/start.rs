@@ -46,7 +46,8 @@ pub fn init_menu() -> () {
         println!("7. 开始/停止采集微信聊天");
         println!("8. 开始/停止定时重启 MCGS 下位机(停止+启动)");
         println!("9. 手动记录freemodel额度");
-        println!("10. 退出");
+        println!("10. 立即检查 SPC.M 有无 Cloud 的新提交");
+        println!("11. 退出");
 
         print!("请输入您的选择: ");
         io::stdout().flush().unwrap(); // 确保提示信息立即显示
@@ -114,6 +115,11 @@ pub fn init_menu() -> () {
                 });
             }
             "10" => {
+                tokio::spawn(async {
+                    crate::git_watch::run_manual_check().await;
+                });
+            }
+            "11" => {
                 println!("退出程序。");
                 break; // 退出循环
             }

@@ -970,7 +970,7 @@ fn show_notification_and_copy_code(title: &str, body: &str) -> Result<Option<Str
     Ok(code)
 }
 
-fn show_windows_toast(title: &str, body: &str) -> Result<(), String> {
+pub(crate) fn show_windows_toast(title: &str, body: &str) -> Result<(), String> {
     let script = windows_toast_script(title, body);
 
     let output = Command::new("powershell.exe")

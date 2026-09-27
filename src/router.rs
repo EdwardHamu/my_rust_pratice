@@ -1,6 +1,7 @@
 use warp::Filter;
 // use std::sync::{Arc, Mutex};
 use crate::controllers::me::{self};
+use crate::git_watch;
 // count:Arc<Mutex<u32>>
 //web路由定义
 pub fn get_router() -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
@@ -13,7 +14,9 @@ pub fn get_router() -> impl warp::Filter<Extract = impl warp::Reply, Error = war
             .or(warp::path!("playList").and_then(me::play_list))
             .or(warp::path!("toast")
                 .and(warp::query::<me::ToastQuery>())
-                .and_then(me::toast_notify)),
+                .and_then(me::toast_notify))
+            .or(warp::path!("git_watch" / "status").and_then(git_watch::http_status))
+            .or(warp::path!("git_watch" / "check").and_then(git_watch::http_check)),
         // .or(warp::path!("playText" / String).and_then(move |s: String| me::play_text(s))),
     );
 

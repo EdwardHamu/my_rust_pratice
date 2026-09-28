@@ -114,13 +114,10 @@ async fn main() {
         file_monitor::start_daily_freemodel_usage_log().await;
     });
 
-    // 每10秒读取 cloudflared.exe 命令行中的 --url 端口，变化时执行 sync-port.ps1
-    let _handle8 = tokio::spawn(async {
-        cloudflared_port_monitor::start_cloudflared_port_monitor().await;
-    });
+    // cloudflared 端口监控默认关闭，改由菜单 11 手动开启/关闭（见 cloudflared_port_monitor.rs）
 
     // 每4小时检查内网仓库 SPC.M 有没有 Cloud 的新提交，有则弹出托盘通知
-    let _handle9 = tokio::spawn(async {
+    let _handle8 = tokio::spawn(async {
         git_watch::start_git_watch().await;
     });
 

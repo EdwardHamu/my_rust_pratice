@@ -8,7 +8,7 @@
 ## 实现
 
 新增 `src/git_watch.rs`，在 `src/main.rs` 中与其它后台任务一样用 `tokio::spawn` 启动
-`start_git_watch()`（`_handle9`），Debug 与 Release 都运行；启动后立即检查一次，之后每 4 小时一次。
+`start_git_watch()`（`_handle8`），Debug 与 Release 都运行；启动后立即检查一次，之后每 4 小时一次。
 
 通知复用 `controllers::me::show_windows_toast()`（改为 `pub(crate)`）的 Windows 托盘气泡，
 同时在控制台打印完整明细（气泡只有 255 个字符，最多列 3 条，总条数在标题里）：

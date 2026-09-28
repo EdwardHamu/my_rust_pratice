@@ -2,7 +2,9 @@
 
 ## 需求
 
-每隔 10 秒执行
+**默认关闭**，在命令行菜单中提供一个开关（菜单 11「开启/关闭 cloudflared 端口监控」），手动开启后才开始监控；再选一次即关闭。
+
+开启后每隔 10 秒执行
 
 ```powershell
 Get-CimInstance Win32_Process -Filter "name='cloudflared.exe'" | Select-Object -ExpandProperty CommandLine
@@ -19,8 +21,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\11038\mcp-agent\syn
 
 ## 实现
 
-新增 `src/cloudflared_port_monitor.rs`，在 `src/main.rs` 中与其它后台任务一样用
-`tokio::spawn` 启动 `start_cloudflared_port_monitor()`（`_handle8`），Debug 与 Release 都运行。
+`src/cloudflared_port_monitor.rs`。程序启动时**不会**自动拉起监控（`main.rs` 里没有对应的 spawn）；
+菜单 11 调用 `toggle_cloudflared_port_monitor()`，与菜单 7（微信采集）、8（MCGS 定时重启）同一套开关模式：
+
+| 函数 | 作用 |
+|---|---|
+| `toggle_cloudflared_port_monitor()` | 关闭态：新建停止标志，`tokio::spawn` 监控任务；开启态：置位停止标志并立即清空状态 |
+| `is_cloudflared_port_monitor_enabled()` | 供菜单显示「当前：已开启 / 已关闭」 |
+| `run_cloudflared_port_monitor(stop_flag)` | 轮询循环，`while !stop_flag` ；退出时打印日志并清理状态（只清理属于本任务的标志） |
+
+菜单每次打印都会重新读取状态，所以标题里的「当前：…」是实时的。
 
 ### 轮询与判定
 
@@ -39,6 +49,10 @@ IPv6（`[::1]:8080`）、多进程多行（合并为集合）。URL 未写端口
 
 ### 取舍
 
+- **默认关闭、手动开启**：该功能只在跑 mcp-agent 的机器上有意义，不再让每台机器每 10 秒起一次 PowerShell。
+- **关闭最多延迟一个轮询间隔**：停止标志在每轮开始时检查，关闭后任务在 ≤10 秒内退出；期间菜单状态已显示为关闭，
+  这时再开启会启动新任务，旧任务退出时通过 `Arc::ptr_eq` 判断不会误清新任务的状态。
+- **每次开启都重新建基准**：关闭再开启视为新监控，首次读到的端口只记基准、不触发同步。
 - **首次读到只记基准，不同步**：hello_cargo 自身重启不等于端口变化。
 - **cloudflared 短暂不在不算变化**：读到空列表（通常是重启中）既不触发同步也不更新基准，
   等它带着端口回来再与旧基准比对。这样一次 cloudflared 重启最多触发一次同步，且端口没变时一次都不触发。
@@ -50,7 +64,9 @@ IPv6（`[::1]:8080`）、多进程多行（合并为集合）。URL 未写端口
 
 ## 测试
 
-`cargo test cloudflared_port_monitor`：12 个单元测试通过，覆盖端口解析的各种命令行形态与判定/基准逻辑。
+`cargo test cloudflared_port_monitor`：15 个单元测试通过，覆盖端口解析的各种命令行形态、判定/基准逻辑，
+以及开关状态（默认关闭、停止标志归属判断、已置位停止标志时循环立即退出）。
+开关行为另在 Linux 上以独立 crate 引入本模块实跑验证：默认关闭 → 开启 → 关闭后 10 秒内任务退出 → 可再次开启。
 另有 1 个 `#[ignore]` 的手动测试 `manual_query_cloudflared_command_lines_on_this_machine`，
 用 `cargo test cloudflared_port_monitor -- --ignored --nocapture` 在本机实跑 CIM 查询，
 本次输出 `cloudflared tunnel --url http://127.0.0.1:54571` → `ports: [54571]`。

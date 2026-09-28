@@ -1,29 +1,92 @@
-//! cloudflared 端口监控。
+//! cloudflared 端口监控（默认关闭，由菜单开关手动开启）。
 //!
-//! 每 10 秒执行一次
+//! 开启后每 10 秒执行一次
 //! `Get-CimInstance Win32_Process -Filter "name='cloudflared.exe'" | Select-Object -ExpandProperty CommandLine`，
 //! 从命令行的 `--url` 参数里解析本地端口；端口与上一次不同时执行
 //! `powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\11038\mcp-agent\sync-port.ps1`。
 //!
 //! 取舍：
+//! - 默认不监控：程序启动时不再自动拉起任务，只有在菜单里手动开启后才开始轮询；
+//!   再次选择同一菜单项即关闭，任务在下一轮检查前退出（最多等一个轮询间隔）。
+//! - 每次开启都从零建立基准：关闭再开启视为新的监控，首次读到的端口只记基准不触发同步。
 //! - 首次读到的端口只作为基准，不触发同步（程序重启不等于端口变化）。
 //! - cloudflared 短暂不在（读到空列表，通常是重启中）不算变化，也不更新基准；
 //!   等它带着端口回来时再和旧基准比对，避免重启过程触发两次同步。
 //! - 同步脚本的失败只记录日志，不影响下一轮检查。
 
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::time::{sleep, Duration};
 
 const POLL_INTERVAL: u64 = 10; // 每10秒检查一次
 const PROCESS_NAME: &str = "cloudflared.exe";
 const SYNC_PORT_SCRIPT: &str = r"C:\Users\11038\mcp-agent\sync-port.ps1";
 
-/// 每 10 秒检查一次 cloudflared 的本地端口，变化时执行 sync-port.ps1
-pub async fn start_cloudflared_port_monitor() {
+/// 当前监控任务的停止标志；None 表示监控处于关闭状态（默认）
+static MONITOR_STOP_FLAG: OnceLock<Mutex<Option<Arc<AtomicBool>>>> = OnceLock::new();
+
+/// 菜单开关：关闭时启动监控任务，开启时请求停止（与微信采集、MCGS 定时重启的开关同一套路）
+pub fn toggle_cloudflared_port_monitor() {
+    let state = MONITOR_STOP_FLAG.get_or_init(|| Mutex::new(None));
+    let mut guard = state.lock().unwrap();
+
+    if let Some(stop_flag) = guard.take() {
+        if !stop_flag.swap(true, Ordering::SeqCst) {
+            println!(
+                "🌐 [cloudflared] 已关闭端口监控，任务将在 {} 秒内退出。",
+                POLL_INTERVAL
+            );
+        }
+        return;
+    }
+
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    *guard = Some(Arc::clone(&stop_flag));
+    drop(guard);
+    println!(
+        "🌐 [cloudflared] 已开启端口监控：每 {} 秒检查一次，端口变化时执行 sync-port.ps1。再次选择该菜单项可关闭。",
+        POLL_INTERVAL
+    );
+
+    tokio::spawn(async move {
+        run_cloudflared_port_monitor(Arc::clone(&stop_flag)).await;
+        clear_monitor_state_if_current(&stop_flag);
+    });
+}
+
+/// 监控是否处于开启状态（供菜单显示当前状态）
+pub fn is_cloudflared_port_monitor_enabled() -> bool {
+    MONITOR_STOP_FLAG
+        .get()
+        .and_then(|state| state.lock().ok().map(|guard| guard.is_some()))
+        .unwrap_or(false)
+}
+
+/// 任务退出时清理状态；只清理属于本次任务的标志，避免误清刚开启的新任务
+fn clear_monitor_state_if_current(completed_stop_flag: &Arc<AtomicBool>) -> bool {
+    let state = MONITOR_STOP_FLAG.get_or_init(|| Mutex::new(None));
+    let mut guard = state.lock().unwrap();
+    if is_current_monitor_flag(guard.as_ref(), completed_stop_flag) {
+        *guard = None;
+        true
+    } else {
+        false
+    }
+}
+
+fn is_current_monitor_flag(current: Option<&Arc<AtomicBool>>, completed: &Arc<AtomicBool>) -> bool {
+    current
+        .map(|current_stop_flag| Arc::ptr_eq(current_stop_flag, completed))
+        .unwrap_or(false)
+}
+
+/// 每 10 秒检查一次 cloudflared 的本地端口，变化时执行 sync-port.ps1；stop_flag 置位后退出
+async fn run_cloudflared_port_monitor(stop_flag: Arc<AtomicBool>) {
     // None 表示还没有成功读到过命令行；首次读到只记基准，不触发同步
     let mut last_ports: Option<Vec<u16>> = None;
 
-    loop {
+    while !stop_flag.load(Ordering::SeqCst) {
         match query_command_lines().await {
             Ok(command_lines) => {
                 let current = extract_ports(&command_lines);
@@ -53,6 +116,8 @@ pub async fn start_cloudflared_port_monitor() {
 
         sleep(Duration::from_secs(POLL_INTERVAL)).await;
     }
+
+    println!("🌐 [cloudflared] 端口监控任务已退出。");
 }
 
 /// 是否需要执行同步：有基准、当前有端口、且与基准不同
@@ -292,6 +357,32 @@ mod tests {
     #[test]
     fn process_appearing_after_empty_baseline_syncs() {
         assert!(should_sync(Some(&[]), &[8080]));
+    }
+
+    #[test]
+    fn only_the_flag_of_the_current_task_counts_as_current() {
+        let old_flag = Arc::new(AtomicBool::new(true));
+        let new_flag = Arc::new(AtomicBool::new(false));
+        assert!(is_current_monitor_flag(Some(&new_flag), &new_flag));
+        assert!(!is_current_monitor_flag(Some(&new_flag), &old_flag));
+        assert!(!is_current_monitor_flag(None, &old_flag));
+    }
+
+    #[test]
+    fn monitor_is_disabled_by_default() {
+        assert!(!is_cloudflared_port_monitor_enabled());
+    }
+
+    #[tokio::test]
+    async fn monitor_loop_exits_immediately_when_already_stopped() {
+        // 停止标志已置位时不做任何一轮检查（不会调用 PowerShell）就返回
+        let stop_flag = Arc::new(AtomicBool::new(true));
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            run_cloudflared_port_monitor(stop_flag),
+        )
+        .await
+        .expect("已停止的监控任务应立即退出");
     }
 
     #[test]

@@ -47,7 +47,15 @@ pub fn init_menu() -> () {
         println!("8. 开始/停止定时重启 MCGS 下位机(停止+启动)");
         println!("9. 手动记录freemodel额度");
         println!("10. 立即检查 SPC.M 有无 Cloud 的新提交");
-        println!("11. 退出");
+        println!(
+            "11. 开启/关闭 cloudflared 端口监控（当前：{}）",
+            if crate::cloudflared_port_monitor::is_cloudflared_port_monitor_enabled() {
+                "已开启"
+            } else {
+                "已关闭"
+            }
+        );
+        println!("12. 退出");
 
         print!("请输入您的选择: ");
         io::stdout().flush().unwrap(); // 确保提示信息立即显示
@@ -120,6 +128,9 @@ pub fn init_menu() -> () {
                 });
             }
             "11" => {
+                crate::cloudflared_port_monitor::toggle_cloudflared_port_monitor();
+            }
+            "12" => {
                 println!("退出程序。");
                 break; // 退出循环
             }

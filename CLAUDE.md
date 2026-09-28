@@ -21,6 +21,10 @@ The role of this file is to describe common mistakes andconfusion points that ag
 
 `src/ui/bingbongbangbong.MP3` is the alarm sound played at 21:30. It gets copied to the output directory by `build.rs`. The binary finds it at runtime via `std::env::current_exe()` sibling path.
 
+## cloudflared port monitor (`cloudflared_port_monitor.rs`)
+
+- Off by default. Menu `11` toggles it (same stop-flag pattern as the WeChat capture and MCGS restart toggles: `OnceLock<Mutex<Option<Arc<AtomicBool>>>>`, task exits within one 10 s poll). `main.rs` must not spawn it unconditionally. Details: `docs/mcp-cloudflared-port-monitor.md`.
+
 ## Git watch (`git_watch.rs`)
 
 - Every 4 h fetches a local bare mirror of the intranet repo `SPC.M` and toasts when author `Cloud` pushed new commits. New = "not reachable from any ref tip before the fetch" (`git log <new tip> --not <old tips>`), never date-based; the mirror on disk *is* the baseline, so restarts don't re-notify and the first run only establishes a baseline.

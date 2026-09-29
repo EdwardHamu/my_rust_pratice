@@ -1,6 +1,6 @@
 //! 内网 Git 仓库提交监控。
 //!
-//! 每 4 小时检查一次 `http://git.newtopiot.com/Newtopp/SPC.M.git` 有没有作者 `Cloud` 的新提交，
+//! 每 10 分钟检查一次 `http://git.newtopiot.com/Newtopp/SPC.M.git` 有没有作者 `Cloud` 的新提交，
 //! 有则用 Windows 托盘气泡（`controllers::me::show_windows_toast`）弹出通知，并在控制台打印明细。
 //!
 //! 实现：
@@ -31,7 +31,7 @@ use warp::Rejection;
 
 pub const DEFAULT_REPO_URL: &str = "http://git.newtopiot.com/Newtopp/SPC.M.git";
 pub const DEFAULT_AUTHOR: &str = "Cloud";
-pub const DEFAULT_INTERVAL_MINUTES: u64 = 4 * 60;
+pub const DEFAULT_INTERVAL_MINUTES: u64 = 10;
 
 /// 首次 fetch 可能要拉整个仓库历史，给足时间；超时后杀掉子进程
 const FETCH_TIMEOUT: Duration = Duration::from_secs(15 * 60);
@@ -838,7 +838,7 @@ async fn check_and_notify(cfg: &Config) -> Result<Outcome, String> {
     result
 }
 
-/// 后台任务入口（main 里 `tokio::spawn` 一次）：启动后立即检查，之后每 4 小时一次。
+/// 后台任务入口（main 里 `tokio::spawn` 一次）：启动后立即检查，之后每 10 分钟一次。
 /// 未启用或配置无效时只打印提示，不影响其它功能。
 pub async fn start_git_watch() {
     let cfg = match Config::from_env() {
@@ -1385,7 +1385,7 @@ mod tests {
         let cfg = Config::from_env().unwrap().unwrap();
         assert_eq!(cfg.repo_url, DEFAULT_REPO_URL);
         assert_eq!(cfg.authors, vec!["Cloud"]);
-        assert_eq!(cfg.interval, Duration::from_secs(4 * 3600));
+        assert_eq!(cfg.interval, Duration::from_secs(10 * 60));
         assert!(cfg.dir.ends_with("git_watch"));
         assert!(!cfg.has_credentials());
 

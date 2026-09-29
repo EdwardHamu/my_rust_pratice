@@ -2,13 +2,13 @@
 
 ## 需求
 
-每隔 4 小时检查内网仓库 `http://git.newtopiot.com/Newtopp/SPC.M.git` 有没有作者 **Cloud** 的新提交，
+每隔 10 分钟检查内网仓库 `http://git.newtopiot.com/Newtopp/SPC.M.git` 有没有作者 **Cloud** 的新提交，
 有就弹出通知。
 
 ## 实现
 
 新增 `src/git_watch.rs`，在 `src/main.rs` 中与其它后台任务一样用 `tokio::spawn` 启动
-`start_git_watch()`（`_handle8`），Debug 与 Release 都运行；启动后立即检查一次，之后每 4 小时一次。
+`start_git_watch()`（`_handle8`），Debug 与 Release 都运行；启动后立即检查一次，之后每 10 分钟一次（2026-09-29 由 4 小时改为 10 分钟）。
 
 通知复用 `controllers::me::show_windows_toast()`（改为 `pub(crate)`）的 Windows 托盘气泡，
 同时在控制台打印完整明细（气泡只有 255 个字符，最多列 3 条，总条数在标题里）：
@@ -55,7 +55,7 @@
 | `GIT_WATCH_REPO_URL` | `http://git.newtopiot.com/Newtopp/SPC.M.git` | 不要把账号密码写进 URL |
 | `GIT_WATCH_AUTHOR` | `Cloud` | 多个用逗号分隔，如 `Cloud,cloud@corp.com` |
 | `GIT_WATCH_USERNAME` / `GIT_WATCH_PASSWORD` | 空 | 仓库需要 HTTP 认证且 Git 凭据管理器里没有时填写，须同时设置；只经子进程环境变量交给 credential helper |
-| `GIT_WATCH_INTERVAL_MINUTES` | `240` | 1 ~ 10080；上线验证时可临时改小 |
+| `GIT_WATCH_INTERVAL_MINUTES` | `10` | 1 ~ 10080；上线验证时可临时改小 |
 | `GIT_WATCH_DIR` | `%LOCALAPPDATA%\hello_cargo\git_watch` | 镜像所在目录 |
 
 ### 手动触发与查看

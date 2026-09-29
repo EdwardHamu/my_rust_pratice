@@ -116,7 +116,7 @@ async fn main() {
 
     // cloudflared 端口监控默认关闭，改由菜单 11 手动开启/关闭（见 cloudflared_port_monitor.rs）
 
-    // 每4小时检查内网仓库 SPC.M 有没有 Cloud 的新提交，有则弹出托盘通知
+    // 每10分钟检查内网仓库 SPC.M 有没有 Cloud 的新提交，有则弹出托盘通知
     let _handle8 = tokio::spawn(async {
         git_watch::start_git_watch().await;
     });

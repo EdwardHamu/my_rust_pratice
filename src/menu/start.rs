@@ -14,10 +14,11 @@ static MCGS_RESTART_STOP_FLAG: OnceLock<Mutex<Option<Arc<AtomicBool>>>> = OnceLo
 static ALT_Q_LISTENER_STARTED: OnceLock<()> = OnceLock::new();
 static ALT_Q_ACTION_STACK: OnceLock<Mutex<Vec<AltQAction>>> = OnceLock::new();
 
+/// Alt+Q 能停止的任务。MCGS 定时重启（菜单 8）故意不在其中：它只能通过再次选择菜单 8 停止，
+/// 避免在别的窗口里按 Alt+Q 时误停重启任务。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AltQAction {
     WechatCapture,
-    McgsRestart,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,7 +31,7 @@ enum McgsRestartToggleAction {
 const VK_Q: i32 = 0x51;
 const MCGS_RESTART_INTERVAL_SECS: u64 = 10 * 60;
 const MCGS_STOP_CHECK_INTERVAL_MS: u64 = 200;
-const MCGS_HOTKEY_POLL_INTERVAL_MS: u64 = 50;
+const ALT_Q_HOTKEY_POLL_INTERVAL_MS: u64 = 50;
 
 pub fn init_menu() -> () {
     ensure_menu_alt_q_listener();
@@ -165,7 +166,7 @@ pub(crate) fn ensure_menu_alt_q_listener() {
                     handle_menu_alt_q();
                 }
 
-                thread::sleep(StdDuration::from_millis(MCGS_HOTKEY_POLL_INTERVAL_MS));
+                thread::sleep(StdDuration::from_millis(ALT_Q_HOTKEY_POLL_INTERVAL_MS));
             }
         });
     });
@@ -185,15 +186,6 @@ fn handle_menu_alt_q() {
 
                 unregister_alt_q_action(AltQAction::WechatCapture);
             }
-            Some(AltQAction::McgsRestart) => {
-                if request_stop_mcgs_restart_loop() {
-                    println!("Alt+Q pressed: stop MCGS restart loop");
-                    unregister_alt_q_action(AltQAction::McgsRestart);
-                    return;
-                }
-
-                unregister_alt_q_action(AltQAction::McgsRestart);
-            }
             None => return,
         }
     }
@@ -206,8 +198,6 @@ fn next_alt_q_action() -> Option<AltQAction> {
 }
 
 fn toggle_mcgs_restart_loop() {
-    ensure_menu_alt_q_listener();
-
     let state = MCGS_RESTART_STOP_FLAG.get_or_init(|| Mutex::new(None));
     let mut guard = state.lock().unwrap();
 
@@ -215,22 +205,18 @@ fn toggle_mcgs_restart_loop() {
         McgsRestartToggleAction::Start => {
             let stop_flag = Arc::new(AtomicBool::new(false));
             *guard = Some(Arc::clone(&stop_flag));
-            register_alt_q_action(AltQAction::McgsRestart);
             drop(guard);
 
             println!(
-                "已启动 MCGS 下位机定时重启：立即执行一次，之后每 10 分钟执行一次。再次选择菜单 8 或按 Alt+Q 停止。"
+                "已启动 MCGS 下位机定时重启：立即执行一次，之后每 10 分钟执行一次。再次选择菜单 8 停止（Alt+Q 不会停止此任务）。"
             );
 
             tokio::spawn(async move {
                 run_mcgs_restart_loop(Arc::clone(&stop_flag)).await;
-                if clear_mcgs_restart_state_if_current(&stop_flag) {
-                    unregister_alt_q_action(AltQAction::McgsRestart);
-                }
+                clear_mcgs_restart_state_if_current(&stop_flag);
             });
         }
         McgsRestartToggleAction::StopRequested => {
-            unregister_alt_q_action(AltQAction::McgsRestart);
             println!("已请求停止 MCGS 定时重启任务；若当前正在重启，将在本轮启动运行完成后停止。");
         }
         McgsRestartToggleAction::AlreadyStopping => {
@@ -279,23 +265,6 @@ async fn wait_for_mcgs_restart_interval_or_stop(stop_flag: &AtomicBool) -> bool 
     }
 
     stop_flag.load(Ordering::SeqCst)
-}
-
-fn request_stop_mcgs_restart_loop() -> bool {
-    let stop_flag = {
-        let state = MCGS_RESTART_STOP_FLAG.get_or_init(|| Mutex::new(None));
-        let guard = state.lock().unwrap();
-        guard.as_ref().cloned()
-    };
-
-    request_stop_flag_once(stop_flag)
-}
-
-fn request_stop_flag_once(stop_flag: Option<Arc<AtomicBool>>) -> bool {
-    match stop_flag {
-        Some(flag) => !flag.swap(true, Ordering::SeqCst),
-        None => false,
-    }
 }
 
 fn clear_mcgs_restart_state_if_current(completed_stop_flag: &Arc<AtomicBool>) -> bool {
@@ -357,17 +326,14 @@ mod tests {
 
     #[test]
     fn alt_q_action_stack_uses_last_started_priority() {
-        let stack = vec![AltQAction::WechatCapture, AltQAction::McgsRestart];
-        assert_eq!(
-            choose_alt_q_action_for_test(&stack),
-            Some(AltQAction::McgsRestart)
-        );
-
-        let stack = vec![AltQAction::McgsRestart, AltQAction::WechatCapture];
+        let stack = vec![AltQAction::WechatCapture];
         assert_eq!(
             choose_alt_q_action_for_test(&stack),
             Some(AltQAction::WechatCapture)
         );
+
+        let stack: Vec<AltQAction> = Vec::new();
+        assert_eq!(choose_alt_q_action_for_test(&stack), None);
     }
 
     #[test]
@@ -404,15 +370,6 @@ mod tests {
             McgsRestartToggleAction::AlreadyStopping
         );
         assert!(state.is_some());
-    }
-
-    #[test]
-    fn request_stop_flag_once_only_reports_first_stop() {
-        let flag = Arc::new(AtomicBool::new(false));
-
-        assert!(request_stop_flag_once(Some(Arc::clone(&flag))));
-        assert!(!request_stop_flag_once(Some(Arc::clone(&flag))));
-        assert!(!request_stop_flag_once(None));
     }
 
     #[test]
